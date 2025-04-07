@@ -7,6 +7,7 @@ package view;
 import controller.SearchProduct;
 import dao.HangDAO;
 import dao.PhanLoaiDAO;
+import database.JDBCUtil;
 import java.awt.Desktop;
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -14,27 +15,35 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.sql.Connection;
 import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.plaf.basic.BasicInternalFrameUI;
 import javax.swing.table.DefaultTableModel;
 import model.Account;
 
 import model.Hang;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import static view.AddProduct.generateProductCode;
 
 /**
  *
@@ -347,66 +356,323 @@ public class ProductForm extends javax.swing.JInternalFrame {
         }
     }//GEN-LAST:event_jButton6ActionPerformed
 
+    
+    
     private void jButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton2ActionPerformed
-        // TODO add your handling code here:
-        File excelFile;
-        FileInputStream excelFIS = null;
-        BufferedInputStream excelBIS = null;
-        XSSFWorkbook excelJTableImport = null;
-//        ArrayList<MayTinh> listAccExcel = new ArrayList<MayTinh>();
-        JFileChooser jf = new JFileChooser();
-        int result = jf.showOpenDialog(null);
-        jf.setDialogTitle("Open file");
-        Workbook workbook = null;
+         File excelFile = null;
+         JFileChooser jf = new JFileChooser();
+        jf.setDialogTitle("Chọn file Excel để nhập (*.xlsx)");
+        FileNameExtensionFilter filter = new FileNameExtensionFilter("Excel Files (*.xlsx)", "xlsx");
+        jf.setFileFilter(filter);
+        jf.setAcceptAllFileFilterUsed(false);
+
+        int result = jf.showOpenDialog(this);
+
         if (result == JFileChooser.APPROVE_OPTION) {
-            try {
-                excelFile = jf.getSelectedFile();
-                excelFIS = new FileInputStream(excelFile);
-                excelBIS = new BufferedInputStream(excelFIS);
-                excelJTableImport = new XSSFWorkbook(excelBIS);
-                XSSFSheet excelSheet = excelJTableImport.getSheetAt(0);
+            int rowsProcessed = 0;
+            int rowsSuccess = 0;
+            int rowsFailed = 0;
+            StringBuilder errorDetails = new StringBuilder(); // Lưu chi tiết lỗi từng dòng
+
+            excelFile = jf.getSelectedFile();
+
+            // Sử dụng try-with-resources cho streams
+            try (FileInputStream excelFIS = new FileInputStream(excelFile);
+                 BufferedInputStream excelBIS = new BufferedInputStream(excelFIS);
+                 XSSFWorkbook excelWorkbook = new XSSFWorkbook(excelBIS))
+            {
+                XSSFSheet excelSheet = excelWorkbook.getSheetAt(0);
+                PhanLoaiDAO phanLoaiDAO = new PhanLoaiDAO(); // Tạo DAO một lần
+                HangDAO hangDAO = HangDAO.getInstance();   // Lấy instance DAO Hàng
+                
+                
                 for (int row = 1; row <= excelSheet.getLastRowNum(); row++) {
                     XSSFRow excelRow = excelSheet.getRow(row);
-                    String maMay = excelRow.getCell(0).getStringCellValue();
-                    String tenMay = excelRow.getCell(1).getStringCellValue();
-                    int soLuong = (int) excelRow.getCell(2).getNumericCellValue();
-                    String giaFomat = excelRow.getCell(3).getStringCellValue().replaceAll(",", "");
-                    int viTri = giaFomat.length() - 1;
-                    String giaoke = giaFomat.substring(0, viTri) + giaFomat.substring(viTri + 1);
-                    double donGia = Double.parseDouble(giaoke);
-                    String boXuLi = excelRow.getCell(4).getStringCellValue();
-                    String ram = excelRow.getCell(5).getStringCellValue();
-                    String boNho = excelRow.getCell(6).getStringCellValue();
-//                    MayTinh mt = new MayTinh(maMay, tenMay, soLuong, donGia, boXuLi, ram, "", "", boNho, 1);
-//                    listAccExcel.add(mt);
-                    DefaultTableModel table_acc = (DefaultTableModel) tblSanPham.getModel();
-                    table_acc.setRowCount(0);
-//                    loadDataToTableSearch(listAccExcel);
-                }
-            } catch (FileNotFoundException ex) {
-                Logger.getLogger(ProductForm.class.getName()).log(Level.SEVERE, null, ex);
-            } catch (IOException ex) {
-                Logger.getLogger(ProductForm.class.getName()).log(Level.SEVERE, null, ex);
+                    String loaiCheck = getCellValueAsString(excelRow.getCell(0)).trim();
+                    String tenCheck = getCellValueAsString(excelRow.getCell(1)).trim();
+
+                    if (loaiCheck.isEmpty() && tenCheck.isEmpty()) {
+                        // Nếu cả cột Loại và Tên đều trống, coi như hết dữ liệu hữu ích
+                        System.out.println("Dừng đọc tại dòng " + (row + 1) + " (Cả cột Loại và Tên đều trống).");
+                        break; // Dừng hoàn toàn vòng lặp
+                    }
+                    
+                      // --- KIỂM TRA SỰ TỒN TẠI TRONG DB ---
+                    if (hangDAO.kiemTraTonTaiTheoTen(tenCheck)) { // Hoặc kiemTraTonTaiTheoTenVaLoai(tenHang, idloai)
+                        // Nếu đã tồn tại, ghi log/thông báo và bỏ qua dòng này
+                        String skipMsg = "Sản phẩm '" + tenCheck + "' đã tồn tại trong hệ thống.";
+                        System.out.println(skipMsg);
+                        errorDetails.append(skipMsg).append(" (Đã bỏ qua)\n"); // Thêm vào chi tiết lỗi để người dùng biết
+                        rowsFailed++; // Coi như đây là một dòng "thất bại" trong việc thêm mới
+                        continue; // Chuyển sang xử lý dòng Excel tiếp theo
+                    }                    
+                    rowsProcessed++;
+                    if (excelRow == null) {
+                        System.out.println("Bỏ qua dòng Excel trống: " + (row + 1));
+                        continue; // Bỏ qua dòng hoàn toàn trống
+                    }
+
+                    String tenHang = ""; // Khởi tạo để dùng trong log lỗi
+                    String loai = "";    // Khởi tạo để dùng trong log lỗi
+                    int currentExcelRow = row + 1; // Số dòng hiển thị cho người dùng
+
+                    try {
+                        // --- Đọc dữ liệu từ Excel ---
+                        loai = getCellValueAsString(excelRow.getCell(0)).trim(); // Cột A - Loại
+                        tenHang = getCellValueAsString(excelRow.getCell(1)).trim(); // Cột B - Tên sản phẩm
+                        int soLuong = getCellValueAsInt(excelRow.getCell(2)); // Cột C - Số lượng
+                        double gia = getCellValueAsDouble(excelRow.getCell(3)); // Cột D - Đơn giá
+                        String xuatsu = getCellValueAsString(excelRow.getCell(4)).trim(); // Cột E - NCC
+                        int trangThai = 1; // Mặc định trạng thái
+
+                        // --- Kiểm tra dữ liệu cơ bản ---
+                        if (loai.isEmpty()) {
+                            throw new IllegalArgumentException("Tên loại hàng không được để trống.");
+                        }
+                         if (tenHang.isEmpty()) {
+                             throw new IllegalArgumentException("Tên sản phẩm không được để trống.");
+                         }
+                         if (soLuong < 0) {
+                             throw new IllegalArgumentException("Số lượng không được âm.");
+                         }
+                          if (gia < 0) {
+                             throw new IllegalArgumentException("Giá không được âm.");
+                         }
+
+                        // --- Lấy ID loại và KIỂM TRA ---
+                        // *** GIẢ SỬ: getIdByTenPhanLoai trả về 0 hoặc số âm nếu không tìm thấy ***
+                        int idloai = phanLoaiDAO.getIdByTenPhanLoai(loai);
+
+                        if (idloai <= 0) { // Hoặc điều kiện kiểm tra lỗi phù hợp với DAO của bạn
+                            throw new Exception("Không tìm thấy loại hàng '" + loai + "' trong cơ sở dữ liệu.");
+                        }
+
+                        // --- Tạo mã hàng và đối tượng Hang ---
+                        String maHang = generateProductCode(); // Đảm bảo hàm này tạo mã duy nhất
+                        Hang hang = new Hang(maHang, tenHang, soLuong, gia, xuatsu, trangThai, idloai);
+
+                        // --- Thêm vào DB (KHÔNG dùng transaction) ---
+                        // Giả sử HangDAO.insert tự quản lý Connection (mở và đóng cho mỗi lần gọi)
+                        hangDAO.insert(hang); // Gọi phương thức insert bình thường của DAO
+
+                        rowsSuccess++; // Tăng biến đếm thành công
+
+                    } catch (Exception ex) { // Bắt tất cả lỗi liên quan đến dòng này (bao gồm lỗi tìm ID, lỗi SQL từ DAO.insert,...)
+                        rowsFailed++;
+                        String errorMsg = "Lỗi ở dòng Excel " + currentExcelRow + " (Tên SP: '" + tenHang + "', Loại: '" + loai + "'): " + ex.getMessage();
+                        System.err.println(errorMsg);
+                        // Ghi lại stack trace vào log nếu cần chi tiết hơn
+                        // Logger.getLogger(ProductForm.class.getName()).log(Level.WARNING, "Lỗi xử lý dòng Excel " + currentExcelRow, ex);
+                        errorDetails.append(errorMsg).append("\n");
+                        // Tiếp tục xử lý dòng tiếp theo
+                    }
+                } // Kết thúc vòng lặp for
+
+            // --- Thông báo kết quả ---
+            String summaryMsg;
+            int messageType;
+            if (rowsFailed == 0 && rowsProcessed > 0) {
+                summaryMsg = "Nhập liệu hoàn tất.\nĐã thêm thành công " + rowsSuccess + " sản phẩm.";
+                messageType = JOptionPane.INFORMATION_MESSAGE;
+            } else if (rowsSuccess > 0) {
+                 summaryMsg = "Nhập liệu hoàn tất với một số lỗi.\n"
+                             + "Thành công: " + rowsSuccess + "/" + rowsProcessed + " dòng.\n"
+                             + "Thất bại: " + rowsFailed + "/" + rowsProcessed + " dòng.\n\n"
+                             + "Chi tiết lỗi:\n" + errorDetails.toString();
+                 messageType = JOptionPane.WARNING_MESSAGE;
+            } else if (rowsProcessed > 0){ // Tất cả đều lỗi
+                 summaryMsg = "Nhập liệu thất bại.\n"
+                             + "Không có sản phẩm nào được thêm.\n"
+                             + "Thất bại: " + rowsFailed + "/" + rowsProcessed + " dòng.\n\n"
+                             + "Chi tiết lỗi:\n" + errorDetails.toString();
+                  messageType = JOptionPane.ERROR_MESSAGE;
+            } else {
+                 summaryMsg = "Không tìm thấy dữ liệu hợp lệ để nhập trong file Excel.";
+                 messageType = JOptionPane.WARNING_MESSAGE;
             }
+
+            // Hiển thị lỗi trong JTextArea nếu quá dài
+             if (errorDetails.length() > 0 && (summaryMsg.length() > 500 || errorDetails.length() > 300)) {
+                 JTextArea textArea = new JTextArea(summaryMsg);
+                 JScrollPane scrollPane = new JScrollPane(textArea);
+                 textArea.setLineWrap(true);
+                 textArea.setWrapStyleWord(true);
+                 textArea.setEditable(false);
+                 scrollPane.setPreferredSize(new java.awt.Dimension(500, 300));
+                 JOptionPane.showMessageDialog(this, scrollPane, "Kết Quả Nhập Liệu", messageType);
+             } else {
+                JOptionPane.showMessageDialog(this, summaryMsg, "Kết Quả Nhập Liệu", messageType);
+             }
+
+        } catch (FileNotFoundException ex) {
+            Logger.getLogger(ProductForm.class.getName()).log(Level.SEVERE, "Không tìm thấy file Excel: " + (excelFile != null ? excelFile.getAbsolutePath() : "null"), ex);
+            JOptionPane.showMessageDialog(this, "Lỗi: Không tìm thấy file Excel đã chọn.\n" + ex.getMessage(), "Lỗi File", JOptionPane.ERROR_MESSAGE);
+        } catch (IOException ex) {
+            Logger.getLogger(ProductForm.class.getName()).log(Level.SEVERE, "Lỗi đọc file Excel: " + (excelFile != null ? excelFile.getAbsolutePath() : "null"), ex);
+            JOptionPane.showMessageDialog(this, "Lỗi: Không thể đọc file Excel.\n" + ex.getMessage(), "Lỗi Đọc File", JOptionPane.ERROR_MESSAGE);
+        } catch (Exception ex) { // Bắt các lỗi không mong muốn khác (ví dụ lỗi khởi tạo DAO)
+            Logger.getLogger(ProductForm.class.getName()).log(Level.SEVERE, "Lỗi không mong muốn.", ex);
+            JOptionPane.showMessageDialog(this, "Lỗi không mong muốn xảy ra:\n" + ex.getMessage(), "Lỗi Chung", JOptionPane.ERROR_MESSAGE);
+        } finally {
+             // Không cần đóng connection ở đây nữa vì không quản lý transaction
         }
-//        for (int i = 0; i < listAccExcel.size(); i++) {
-//            MayTinh mayTinh = listAccExcel.get(i);
-//            if (mayTinh.getMaMay().contains("LP")) {
-//                Laptop lapNew = new Laptop(0, "", mayTinh.getMaMay(),
-//                        mayTinh.getTenMay(), mayTinh.getSoLuong(), mayTinh.getGia(), mayTinh.getTenCpu(),
-//                        mayTinh.getRam(), mayTinh.getXuatXu(), mayTinh.getCardManHinh(), mayTinh.getRom(), 1);
-//                LaptopDAO.getInstance().insert(lapNew);
-//            } else if (mayTinh.getMaMay().contains("PC")) {
-//                PC pcNew = new PC("", 0, mayTinh.getMaMay(), mayTinh.getTenMay(), mayTinh.getSoLuong(),
-//                        mayTinh.getGia(), mayTinh.getTenCpu(), mayTinh.getRam(), mayTinh.getXuatXu(), mayTinh.getCardManHinh(),
-//                        mayTinh.getRom(), mayTinh.getTrangThai());
-//                PCDAO.getInstance().insert(pcNew);
-//            } else {
-//                JOptionPane.showMessageDialog(this, "Mã máy " + mayTinh.getMaMay() + " không phù hợp !", "Cảnh báo", JOptionPane.WARNING_MESSAGE);
-//            }
-//        }
+
+        // Luôn tải lại bảng để hiển thị kết quả (kể cả khi chỉ thêm được một phần)
+        // Bạn có thể thêm điều kiện if (rowsSuccess > 0) nếu chỉ muốn load lại khi có ít nhất 1 thành công
+        System.out.println("Quá trình nhập liệu kết thúc, đang tải lại bảng...");
+        loadDataToTable();
+        System.out.println("Tải lại bảng hoàn tất.");
+    }
+             // Kết thúc if (result == JFileChooser.APPROVE_OPTION)
     }//GEN-LAST:event_jButton2ActionPerformed
 
+    private double getCellValueAsDouble(Cell cell) {
+        if (cell == null) {
+            return 0.0;
+        }
+
+         CellType cellType = cell.getCellType();
+         if (cellType == CellType.FORMULA) {
+            cellType = cell.getCachedFormulaResultType();
+        }
+
+        switch (cellType) {
+            case NUMERIC:
+                return cell.getNumericCellValue();
+
+            case STRING:
+                String strValue = cell.getStringCellValue().trim();
+                 if (strValue.isEmpty()) {
+                    return 0.0; // Chuỗi rỗng coi là 0.0
+                }
+                try {
+                    // Thay thế dấu phẩy bằng dấu chấm để chuẩn hóa trước khi parse
+                    return Double.parseDouble(strValue.replace(',', '.'));
+                } catch (NumberFormatException e) {
+                    System.err.println("Lỗi: Không thể chuyển đổi chuỗi '" + strValue + "' thành số thực tại ô " + cell.getAddress().formatAsString());
+                    return 0.0; // Trả về 0.0 nếu không chuyển đổi được
+                }
+            case BLANK:
+            default:
+                return 0.0; // Trả về 0.0 cho các trường hợp còn lại
+        }
+    }
+
+    private String getCellValueAsString(Cell cell) {
+    if (cell == null) {
+        return ""; // Trả về rỗng nếu ô không tồn tại
+    }
+
+    CellType cellType = cell.getCellType();
+    // Nếu là công thức, lấy kiểu dữ liệu của kết quả công thức
+    if (cellType == CellType.FORMULA) {
+        cellType = cell.getCachedFormulaResultType();
+    }
+
+    switch (cellType) {
+        case STRING:
+            return cell.getStringCellValue().trim(); // Lấy chuỗi và cắt khoảng trắng thừa
+
+        case NUMERIC:
+            // Kiểm tra xem có phải là định dạng ngày tháng không
+            if (DateUtil.isCellDateFormatted(cell)) {
+                // Xử lý định dạng ngày tháng
+                SimpleDateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy"); // Hoặc định dạng bạn muốn
+                return dateFormat.format(cell.getDateCellValue());
+            } else {
+                // Xử lý số, tránh hiển thị dạng khoa học (E) và ".0" cho số nguyên
+                double numValue = cell.getNumericCellValue();
+                // Sử dụng DecimalFormat để tránh dạng khoa học và kiểm soát số thập phân
+                // Định dạng này sẽ hiển thị tối đa 10 chữ số thập phân nếu có
+                DecimalFormat df = new DecimalFormat("#.##########");
+                return df.format(numValue);
+                /* // Cách khác đơn giản hơn nếu không cần kiểm soát số thập phân nhiều:
+                 if (numValue == Math.floor(numValue) && !Double.isInfinite(numValue)) {
+                     // Là số nguyên
+                     return String.valueOf((long) numValue);
+                 } else {
+                     // Là số thực
+                     return String.valueOf(numValue);
+                 }
+                 */
+            }
+
+        case BOOLEAN:
+            return String.valueOf(cell.getBooleanCellValue());
+
+        case BLANK:
+            return ""; // Trả về rỗng nếu ô trống
+
+        case ERROR:
+            return "ERROR:" + cell.getErrorCellValue(); // Trả về mã lỗi
+
+        default:
+            return ""; // Trường hợp khác trả về rỗng
+    }
+}
+
+    
+   private int getCellValueAsInt(Cell cell) {
+    if (cell == null) {
+        return 0;
+    }
+
+    CellType cellType = cell.getCellType();
+     if (cellType == CellType.FORMULA) {
+        cellType = cell.getCachedFormulaResultType();
+    }
+
+    switch (cellType) {
+        case NUMERIC:
+             // Lấy giá trị số và làm tròn (hoặc ép kiểu nếu chắc chắn là nguyên)
+             double numValue = cell.getNumericCellValue();
+             // Kiểm tra xem có phải là số nguyên không để tránh mất mát dữ liệu khi ép kiểu
+             if (numValue >= Integer.MIN_VALUE && numValue <= Integer.MAX_VALUE && numValue == Math.floor(numValue)) {
+                 return (int) numValue;
+             } else {
+                  System.err.println("Cảnh báo: Giá trị số " + numValue + " tại ô " + cell.getAddress().formatAsString() + " không phải là số nguyên hoặc nằm ngoài phạm vi int. Làm tròn và trả về.");
+                  // Có thể ném lỗi ở đây nếu cần chặt chẽ hơn
+                  // throw new NumberFormatException("Giá trị không phải số nguyên hợp lệ tại ô " + cell.getAddress().formatAsString());
+                 return (int) Math.round(numValue); // Hoặc trả về 0, hoặc ném lỗi tùy yêu cầu
+             }
+
+        case STRING:
+            String strValue = cell.getStringCellValue().trim();
+            if (strValue.isEmpty()) {
+                return 0; // Chuỗi rỗng coi là 0
+            }
+            try {
+                 // Thử chuyển đổi chuỗi thành double trước để xử lý trường hợp "123.0"
+                 double dValue = Double.parseDouble(strValue);
+                 // Kiểm tra lại phạm vi và tính nguyên vẹn
+                 if (dValue >= Integer.MIN_VALUE && dValue <= Integer.MAX_VALUE && dValue == Math.floor(dValue)) {
+                      return (int) dValue;
+                 } else {
+                      System.err.println("Cảnh báo: Chuỗi '" + strValue + "' tại ô " + cell.getAddress().formatAsString() + " không biểu diễn số nguyên hợp lệ hoặc ngoài phạm vi int.");
+                      // Ném lỗi hoặc trả về giá trị mặc định
+                     return 0; // Hoặc (int) Math.round(dValue) nếu muốn làm tròn
+                 }
+            } catch (NumberFormatException e) {
+                 System.err.println("Lỗi: Không thể chuyển đổi chuỗi '" + strValue + "' thành số nguyên tại ô " + cell.getAddress().formatAsString());
+                return 0; // Trả về 0 nếu không chuyển đổi được
+            }
+        case BLANK:
+        default:
+            return 0; // Trả về 0 cho các trường hợp còn lại
+    }
+}
+
+    // Hàm chuyển đổi giá tiền từ chuỗi sang số
+    private static double parsePrice(String price) {
+        if (price == null || price.isEmpty()) return 0;
+        price = price.replace(".", "").replace("đ", "").trim(); // Xóa dấu . và ký tự đ
+        try {
+            return Double.parseDouble(price);
+        } catch (NumberFormatException e) {
+            return 0; // Nếu có lỗi thì trả về 0
+        }
+    }
+    
     private void jButton7ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton7ActionPerformed
         // TODO add your handling code here:
         jComboBoxLuaChon.setSelectedIndex(0);
@@ -435,11 +701,11 @@ public class ProductForm extends javax.swing.JInternalFrame {
     }//GEN-LAST:event_jTextFieldSearchKeyPressed
 
     private void jComboBoxLuaChonPropertyChange(java.beans.PropertyChangeEvent evt) {//GEN-FIRST:event_jComboBoxLuaChonPropertyChange
-        // TODO add your handling code here:
-//        String luaChon = jComboBoxLuaChon.getSelectedItem().toString();
-//        String content = jTextFieldSearch.getText();
-//        ArrayList<MayTinh> result = searchFn(luaChon, content);
-//        loadDataToTableSearch(result);
+//         TODO add your handling code here:
+        String luaChon = jComboBoxLuaChon.getSelectedItem().toString();
+        String content = jTextFieldSearch.getText();
+        ArrayList<Hang> result = searchFn(luaChon, content);
+        loadDataToTableSearch(result);
     }//GEN-LAST:event_jComboBoxLuaChonPropertyChange
 
     private void btnAddActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddActionPerformed
@@ -522,10 +788,9 @@ public class ProductForm extends javax.swing.JInternalFrame {
                 tblModel.addRow(new Object[]{
                     ++stt,
                     i.getMaHang(),
-//                    System.out.printf(PhanLoaiDAO.getTenPhanLoaiById(i.getIdLoai())),
                         PhanLoaiDAO.getTenPhanLoaiById(i.getIdLoai()),
                         i.getTenHang(), 
-                        i.getSoLuong(),                         
+//                        i.getSoLuong(),                         
                         formatter.format(i.getGia()) + "đ",
                         trangThaiStr
                 });

@@ -210,4 +210,40 @@ public class HangDAO implements DAOInterface<Hang> {
         }
         return soluong;
     }
+    
+    public boolean kiemTraTonTaiTheoTen(String tenHang) {        
+        Connection conn = JDBCUtil.getConnection();
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+        boolean tonTai = false;
+        // Tên cột Tên Hàng trong DB của bạn có thể khác (ví dụ: TenSP)
+        String sql = "SELECT COUNT(*) FROM hang WHERE TenHang = ?"; // Hoặc tên cột đúng
+
+        // Cân nhắc chuẩn hóa tên trước khi kiểm tra nếu cần
+        // Ví dụ: tìm kiếm không phân biệt hoa thường (phụ thuộc DB)
+        // String sql = "SELECT COUNT(*) FROM hang WHERE LOWER(TenHang) = LOWER(?)";
+
+        try {
+            PreparedStatement pst = conn.prepareStatement(sql);
+            pstmt.setString(1, tenHang); // Đặt tên hàng cần tìm
+            rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                tonTai = (rs.getInt(1) > 0); // Nếu count > 0 thì tên đã tồn tại
+            }
+        } catch (SQLException e) {
+            System.err.println("Lỗi khi kiểm tra sự tồn tại của sản phẩm theo tên: " + tenHang);
+            e.printStackTrace();
+            // Trong trường hợp lỗi, trả về false để tránh bỏ qua import không cần thiết
+            // Hoặc bạn có thể ném lại lỗi để xử lý ở tầng trên
+            return false;
+        } finally {
+            // Đóng resources
+            try { if (rs != null) rs.close(); } catch (SQLException e) { e.printStackTrace(); }
+            try { if (pstmt != null) pstmt.close(); } catch (SQLException e) { e.printStackTrace(); }
+            try { if (conn != null) conn.close(); } catch (SQLException e) { e.printStackTrace(); }
+        }
+        return tonTai;
+    }
+    
 }
