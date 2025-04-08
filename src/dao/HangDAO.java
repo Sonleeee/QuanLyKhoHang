@@ -85,7 +85,8 @@ public class HangDAO implements DAOInterface<Hang> {
         try {
             Connection con = JDBCUtil.getConnection();
             String sql = "SELECT h.*, p.TenLoai FROM Hang h " +
-                 "JOIN PhanLoai p ON h.idLoai = p.idLoai ";
+                     "JOIN PhanLoai p ON h.idLoai = p.idLoai " +
+                     "ORDER BY p.TenLoai ASC";
             PreparedStatement pst = con.prepareStatement(sql);
             ResultSet rs = pst.executeQuery();
             while (rs.next()) {
@@ -224,7 +225,7 @@ public class HangDAO implements DAOInterface<Hang> {
         // String sql = "SELECT COUNT(*) FROM hang WHERE LOWER(TenHang) = LOWER(?)";
 
         try {
-            PreparedStatement pst = conn.prepareStatement(sql);
+             pstmt = conn.prepareStatement(sql);
             pstmt.setString(1, tenHang); // Đặt tên hàng cần tìm
             rs = pstmt.executeQuery();
 
@@ -245,5 +246,37 @@ public class HangDAO implements DAOInterface<Hang> {
         }
         return tonTai;
     }
+    
+    public Hang getHangByTen(String tenHang) {
+        Hang hang = null;
+        Connection con = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+        String sql = "SELECT MaHang, TenHang, SoLuong, Gia, TrangThai, IDLoai FROM Hang WHERE TenHang = ?"; // Lấy các cột cần thiết
+
+//        if (tenHang == null || tenHang.trim().isEmpty()) return null;
+
+        try {
+            con = JDBCUtil.getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setString(1, tenHang);
+            rs = pstmt.executeQuery();
+             
+            if (rs.next()) {
+                hang = new Hang();
+                hang.setMaHang(rs.getString("MaHang"));
+                hang.setTenHang(rs.getString("TenHang"));
+                hang.setSoLuong(rs.getInt("SoLuong")); // Có thể không cần thiết ở đây
+                hang.setGia(rs.getDouble("Gia"));     // Quan trọng
+//                hang.setXuatXu(rs.getString("XuatSu")); // Ví dụ
+                hang.setTrangThai(rs.getInt("TrangThai")); // Ví dụ
+                hang.setIdLoai(rs.getInt("IDLoai"));     // Ví dụ
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } 
+        return hang;
+    }
+    
     
 }

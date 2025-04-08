@@ -21,11 +21,16 @@ import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Random;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import static javax.swing.JOptionPane.QUESTION_MESSAGE;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.plaf.basic.BasicInternalFrameUI;
 import javax.swing.table.DefaultTableModel;
 import model.Account;
@@ -34,6 +39,10 @@ import model.Hang;
 import model.NhaCungCap;
 import model.Phieu;
 import model.PhieuNhap;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -68,7 +77,7 @@ public class NhapHangForm extends javax.swing.JInternalFrame {
 
     private void loadNccToComboBox() {
         for (NhaCungCap i : arrNcc) {
-            cboNhaCungCap.addItem(i.getTenNhaCungCap());
+            cboNhaCungCap.addItem(i.getTenNhaCungCap());           
         }
     }
 
@@ -168,7 +177,7 @@ public class NhapHangForm extends javax.swing.JInternalFrame {
         textTongTien = new javax.swing.JLabel();
         deleteProduct = new javax.swing.JButton();
         jButton1 = new javax.swing.JButton();
-        deleteProduct1 = new javax.swing.JButton();
+        importChiTietPhieuActionPerformed = new javax.swing.JButton();
         jPanel3 = new javax.swing.JPanel();
         jScrollPane2 = new javax.swing.JScrollPane();
         tblSanPham = new javax.swing.JTable();
@@ -258,15 +267,15 @@ public class NhapHangForm extends javax.swing.JInternalFrame {
         });
         jPanel2.add(jButton1, new org.netbeans.lib.awtextra.AbsoluteConstraints(230, 610, -1, 40));
 
-        deleteProduct1.setIcon(new javax.swing.ImageIcon(getClass().getResource("/icon/icons8-microsoft-excel-2019-25.png"))); // NOI18N
-        deleteProduct1.setText("Nhập excel");
-        deleteProduct1.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
-        deleteProduct1.addActionListener(new java.awt.event.ActionListener() {
+        importChiTietPhieuActionPerformed.setIcon(new javax.swing.ImageIcon(getClass().getResource("/icon/icons8-microsoft-excel-2019-25.png"))); // NOI18N
+        importChiTietPhieuActionPerformed.setText("Nhập excel");
+        importChiTietPhieuActionPerformed.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
+        importChiTietPhieuActionPerformed.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
-                deleteProduct1ActionPerformed(evt);
+                importChiTietPhieuActionPerformedActionPerformed(evt);
             }
         });
-        jPanel2.add(deleteProduct1, new org.netbeans.lib.awtextra.AbsoluteConstraints(90, 610, -1, 40));
+        jPanel2.add(importChiTietPhieuActionPerformed, new org.netbeans.lib.awtextra.AbsoluteConstraints(90, 610, -1, 40));
 
         jPanel1.add(jPanel2, new org.netbeans.lib.awtextra.AbsoluteConstraints(560, 0, 620, 750));
 
@@ -517,44 +526,191 @@ public class NhapHangForm extends javax.swing.JInternalFrame {
         loadDataToTableProduct(allProduct);
     }//GEN-LAST:event_btnResetActionPerformed
 
-    private void deleteProduct1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_deleteProduct1ActionPerformed
+    private void importChiTietPhieuActionPerformedActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_importChiTietPhieuActionPerformedActionPerformed
         // TODO add your handling code here:
-        File excelFile;
-        FileInputStream excelFIS = null;
-        BufferedInputStream excelBIS = null;
-        XSSFWorkbook excelJTableImport = null;
-        ArrayList<ChiTietPhieu> listAccExcel = new ArrayList<ChiTietPhieu>();
-        JFileChooser jf = new JFileChooser();
-        int result = jf.showOpenDialog(null);
-        jf.setDialogTitle("Open file");
-        Workbook workbook = null;
-        if (result == JFileChooser.APPROVE_OPTION) {
-            try {
-                excelFile = jf.getSelectedFile();
-                excelFIS = new FileInputStream(excelFile);
-                excelBIS = new BufferedInputStream(excelFIS);
-                excelJTableImport = new XSSFWorkbook(excelBIS);
-                XSSFSheet excelSheet = excelJTableImport.getSheetAt(0);
-                for (int row = 1; row < excelSheet.getLastRowNum(); row++) {
-                    XSSFRow excelRow = excelSheet.getRow(row);
-                    String maPhieu = txtMaPhieu.getText();
-                    String maSanPham = excelRow.getCell(1).getStringCellValue();
-                    String tenSanPham = excelRow.getCell(2).getStringCellValue();
-                    int soLuong = (int) (excelRow.getCell(3).getNumericCellValue());
-                
-                    double donGia = HangDAO.getInstance().selectById(maSanPham).getGia();
-                    ChiTietPhieu ctpnew = new ChiTietPhieu(maPhieu, maSanPham, soLuong, donGia);
-                    CTPhieu.add(ctpnew);
-                }
-                loadDataToTableNhapHang();
-            } catch (FileNotFoundException ex) {
-                Logger.getLogger(AccountForm.class.getName()).log(Level.SEVERE, null, ex);
-            } catch (IOException ex) {
-                Logger.getLogger(AccountForm.class.getName()).log(Level.SEVERE, null, ex);
-            }
+       File excelFile = null;
+    FileInputStream excelFIS = null;
+    BufferedInputStream excelBIS = null;
+    Workbook excelWorkbook = null; // Sử dụng Workbook interface
+    // ArrayList<ChiTietPhieu> listAccExcel = new ArrayList<ChiTietPhieu>(); // Biến này không được sử dụng
+
+    JFileChooser jf = new JFileChooser();
+    jf.setDialogTitle("Chọn file Excel (Tên SP, Số Lượng)"); // Chỉ cần 2 cột này
+    javax.swing.filechooser.FileNameExtensionFilter filter = new javax.swing.filechooser.FileNameExtensionFilter("Excel Files (*.xlsx)", "xlsx");
+    jf.setFileFilter(filter);
+    jf.setAcceptAllFileFilterUsed(false);
+
+    int result = jf.showOpenDialog(this);
+
+    if (result == JFileChooser.APPROVE_OPTION) {
+        HangDAO hangDAO = HangDAO.getInstance(); // Khởi tạo DAO
+        String maPhieu = txtMaPhieu.getText(); // Lấy mã phiếu
+
+        if (maPhieu == null || maPhieu.trim().isEmpty()) {
+             JOptionPane.showMessageDialog(this, "Vui lòng nhập Mã Phiếu!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+             return;
         }
-        loadDataToTableNhapHang();
-    }//GEN-LAST:event_deleteProduct1ActionPerformed
+
+        int rowsSuccess = 0;
+        int rowsFailed = 0;
+        StringBuilder errorLog = new StringBuilder("--- Chi tiết lỗi import ---\n");
+
+        try {
+            excelFile = jf.getSelectedFile();
+            excelFIS = new FileInputStream(excelFile);
+            excelBIS = new BufferedInputStream(excelFIS);
+            excelWorkbook = new XSSFWorkbook(excelBIS);
+            Sheet excelSheet = excelWorkbook.getSheetAt(0);
+
+            int lastRowNum = excelSheet.getLastRowNum();
+            System.out.println("Bắt đầu đọc file Excel từ dòng 2 đến " + (lastRowNum + 1));
+
+            // *** Sửa vòng lặp: Dùng <= ***
+            for (int rowIndex = 1; rowIndex <= lastRowNum; rowIndex++) {
+                Row excelRow = excelSheet.getRow(rowIndex);
+                int currentRowForDisplay = rowIndex + 1;
+
+                if (excelRow == null) {
+                    System.out.println("Bỏ qua dòng " + currentRowForDisplay + ": Dòng trống.");
+                    // Không tăng rowsFailed nếu coi dòng trống là bình thường
+                    continue;
+                }
+
+                String tenSanPham = "";
+                int soLuong = 0;
+                // Không cần biến donGia ở đây ban đầu
+
+                try {
+                    // --- Đọc Tên Sản Phẩm (Cột A/0) ---
+                    Cell tenCell = excelRow.getCell(0);
+                    if (tenCell != null && tenCell.getCellType() == CellType.STRING) {
+                        tenSanPham = tenCell.getStringCellValue().trim();
+                    } else if (tenCell != null && tenCell.getCellType() == CellType.NUMERIC) {
+                        tenSanPham = String.valueOf(tenCell.getNumericCellValue());
+                    } else {
+                        errorLog.append("Dòng ").append(currentRowForDisplay).append(": Tên sản phẩm (Cột A) không hợp lệ hoặc trống.\n");
+                        rowsFailed++;
+                        continue; // Bỏ qua dòng lỗi
+                    }
+                    if(tenSanPham.isEmpty()){
+                        errorLog.append("Dòng ").append(currentRowForDisplay).append(": Tên sản phẩm (Cột A) không được để trống.\n");
+                        rowsFailed++;
+                        continue;
+                    }
+
+                    // --- Đọc Số Lượng (Cột B/1) ---
+                    Cell slCell = excelRow.getCell(1);
+                    if (slCell != null && slCell.getCellType() == CellType.NUMERIC) {
+                        soLuong = (int) slCell.getNumericCellValue();
+                        if (soLuong <= 0) {
+                            errorLog.append("Dòng ").append(currentRowForDisplay).append(" (SP: ").append(tenSanPham).append("): Số lượng (Cột B) phải > 0.\n");
+                            rowsFailed++;
+                            continue;
+                        }
+                    } else {
+                        errorLog.append("Dòng ").append(currentRowForDisplay).append(" (SP: ").append(tenSanPham).append("): Số lượng (Cột B) không phải số hoặc trống.\n");
+                        rowsFailed++;
+                        continue;
+                    }
+
+                    // --- Tìm Sản Phẩm và Lấy Đơn Giá từ DB ---
+                    // *** GIẢ ĐỊNH: có phương thức getHangByTen trả về đối tượng Hang hoặc null ***
+                    Hang foundHang = hangDAO.getHangByTen(tenSanPham);
+
+                    if (foundHang == null) {
+                        // Không tìm thấy sản phẩm trong DB
+                        errorLog.append("Dòng ").append(currentRowForDisplay).append(": Sản phẩm '").append(tenSanPham).append("' không tồn tại trong CSDL. Đã bỏ qua.\n");
+                        rowsFailed++;
+                        continue; // Bỏ qua dòng này, không thêm chi tiết
+                    }
+
+                    // Nếu sản phẩm được tìm thấy
+                    String maSanPham = foundHang.getMaHang(); // Giả sử Hang có getMaHang()
+                    double donGia = foundHang.getGia();       // Giả sử Hang có getGia()
+
+                    // Kiểm tra đơn giá lấy từ DB (tùy chọn)
+                    if (donGia < 0) {
+                         errorLog.append("Dòng ").append(currentRowForDisplay).append(": Sản phẩm '").append(tenSanPham).append("' có đơn giá âm trong CSDL (").append(donGia).append("). Đã bỏ qua.\n");
+                         rowsFailed++;
+                         continue; // Bỏ qua nếu giá trong DB không hợp lệ
+                    }
+
+                    // --- Tạo đối tượng ChiTietPhieu ---
+                    ChiTietPhieu ctpnew = new ChiTietPhieu(maPhieu, maSanPham, soLuong, donGia);
+
+                    // --- Thêm vào danh sách Chi Tiết Phiếu ---
+                    CTPhieu.add(ctpnew); // Giả sử CTPhieu là List<ChiTietPhieu> của class
+                    rowsSuccess++;
+                    System.out.println("Thông tin dòng " + currentRowForDisplay + ": Đã thêm chi tiết cho SP '" + tenSanPham + "' (Mã: " + maSanPham + ", SL: " + soLuong + ", Giá DB: " + donGia + ")");
+
+                } catch (Exception ex) {
+                    // Bắt các lỗi không mong muốn khác trong quá trình xử lý dòng
+                    rowsFailed++;
+                    String errorMsg = "Lỗi xử lý dòng " + currentRowForDisplay + " (SP: " + tenSanPham + "): " + ex.getMessage();
+                    System.err.println(errorMsg);
+                    errorLog.append(errorMsg).append("\n");
+                    ex.printStackTrace();
+                }
+            } // Kết thúc vòng lặp for
+
+        } catch (FileNotFoundException ex) {
+            Logger.getLogger(this.getClass().getName()).log(Level.SEVERE, "Không tìm thấy file Excel", ex);
+             JOptionPane.showMessageDialog(this, "Lỗi: Không tìm thấy file Excel đã chọn.", "Lỗi File", JOptionPane.ERROR_MESSAGE);
+        } catch (IOException ex) {
+            Logger.getLogger(this.getClass().getName()).log(Level.SEVERE, "Lỗi IO khi đọc file", ex);
+             JOptionPane.showMessageDialog(this, "Lỗi: Không thể đọc file Excel.", "Lỗi Đọc File", JOptionPane.ERROR_MESSAGE);
+        } catch (Exception ex){
+             Logger.getLogger(this.getClass().getName()).log(Level.SEVERE, "Lỗi không mong muốn", ex);
+             JOptionPane.showMessageDialog(this, "Lỗi không mong muốn xảy ra: " + ex.getMessage(), "Lỗi Chung", JOptionPane.ERROR_MESSAGE);
+        }
+        finally {
+            // --- Đóng tài nguyên ---
+            try {
+                if (excelWorkbook != null) excelWorkbook.close();
+                if (excelBIS != null) excelBIS.close();
+                if (excelFIS != null) excelFIS.close();
+                System.out.println("Đã đóng tài nguyên file Excel.");
+            } catch (IOException ex) {
+                Logger.getLogger(this.getClass().getName()).log(Level.SEVERE, "Lỗi khi đóng tài nguyên file Excel", ex);
+            }
+
+            // --- Thông báo kết quả ---
+            String summaryMsg;
+             if (rowsFailed == 0 && rowsSuccess > 0) {
+                 summaryMsg = "Import hoàn tất.\nĐã thêm thành công " + rowsSuccess + " chi tiết.";
+                 JOptionPane.showMessageDialog(this, summaryMsg, "Thành Công", JOptionPane.INFORMATION_MESSAGE);
+             } else if (rowsSuccess > 0) {
+                 summaryMsg = "Import hoàn tất với lỗi.\nThành công: " + rowsSuccess + ", Thất bại: " + rowsFailed + ".";
+                  System.err.println(errorLog.toString()); // In log lỗi chi tiết ra console
+                  // Hiển thị lỗi chi tiết nếu muốn
+                  JTextArea textArea = new JTextArea(summaryMsg + "\n\nChi tiết lỗi:\n" + errorLog.toString());
+                  JScrollPane scrollPane = new JScrollPane(textArea);
+                  textArea.setLineWrap(true); textArea.setWrapStyleWord(true); textArea.setEditable(false);
+                  scrollPane.setPreferredSize(new java.awt.Dimension(500, 300));
+                  JOptionPane.showMessageDialog(this, scrollPane, "Kết Quả Import (Có Lỗi)", JOptionPane.WARNING_MESSAGE);
+             } else if (rowsFailed > 0) {
+                 summaryMsg = "Import thất bại.\nKhông có chi tiết nào được thêm (" + rowsFailed + " lỗi).";
+                  System.err.println(errorLog.toString());
+                  // Hiển thị lỗi chi tiết tương tự
+                  JTextArea textArea = new JTextArea(summaryMsg + "\n\nChi tiết lỗi:\n" + errorLog.toString());
+                  JScrollPane scrollPane = new JScrollPane(textArea);
+                  textArea.setLineWrap(true); textArea.setWrapStyleWord(true); textArea.setEditable(false);
+                  scrollPane.setPreferredSize(new java.awt.Dimension(500, 300));
+                  JOptionPane.showMessageDialog(this, scrollPane, "Import Thất Bại", JOptionPane.ERROR_MESSAGE);
+             } else { // Không có dòng nào được xử lý thành công hoặc thất bại (file trống/không hợp lệ)
+                 summaryMsg = "Không có dữ liệu hợp lệ nào được xử lý từ file Excel.";
+                  JOptionPane.showMessageDialog(this, summaryMsg, "Thông Báo", JOptionPane.WARNING_MESSAGE);
+             }
+
+
+            // --- Tải lại bảng ---
+            System.out.println("Kết thúc import. Đang tải lại bảng...");
+            loadDataToTableNhapHang();
+             System.out.println("Đã tải lại bảng.");
+        }
+    } // Kết thúc if (result == JFileChooser.APPROVE_OPTION) 
+    }//GEN-LAST:event_importChiTietPhieuActionPerformedActionPerformed
+    
 
     public String createId(ArrayList<PhieuNhap> arr) {
         int id = arr.size() + 1;
@@ -585,7 +741,7 @@ public class NhapHangForm extends javax.swing.JInternalFrame {
     private javax.swing.JButton btnReset;
     private javax.swing.JComboBox<String> cboNhaCungCap;
     private javax.swing.JButton deleteProduct;
-    private javax.swing.JButton deleteProduct1;
+    private javax.swing.JButton importChiTietPhieuActionPerformed;
     private javax.swing.JButton jButton1;
     private javax.swing.JLabel jLabel1;
     private javax.swing.JLabel jLabel2;

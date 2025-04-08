@@ -34,6 +34,7 @@ import javax.swing.table.DefaultTableModel;
 import model.Account;
 
 import model.Hang;
+import model.PhanLoai;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DateUtil;
@@ -62,6 +63,7 @@ public class ProductForm extends javax.swing.JInternalFrame {
             tblSanPham.setDefaultEditor(Object.class, null);            
             initTable();            
             loadDataToTable();
+//            loadDataToTable();
             changeTextFind();
         } catch (Exception e) {
             e.printStackTrace();  // In lỗi ra console
@@ -386,11 +388,20 @@ public class ProductForm extends javax.swing.JInternalFrame {
                 HangDAO hangDAO = HangDAO.getInstance();   // Lấy instance DAO Hàng
                 
                 
-                for (int row = 1; row <= excelSheet.getLastRowNum(); row++) {
+                for (int row = 1; row <= excelSheet.getLastRowNum(); row++) {                    
                     XSSFRow excelRow = excelSheet.getRow(row);
+                    if (excelRow == null) {
+                            System.out.println("Dừng đọc tại dòng " + (row + 1) + " vì đối tượng Row là null (có thể là dòng trống hoặc cuối file).");
+                            // Quyết định dừng hẳn (break) hay bỏ qua hàng này (continue)
+                            // Nếu null thường chỉ xuất hiện ở cuối file, 'break' là hợp lý.
+                            break; // Dừng vòng lặp
+                            // continue; // Nếu bạn muốn bỏ qua hàng null này và thử hàng tiếp theo
+                        }
+
                     String loaiCheck = getCellValueAsString(excelRow.getCell(0)).trim();
                     String tenCheck = getCellValueAsString(excelRow.getCell(1)).trim();
-
+                    
+                      
                     if (loaiCheck.isEmpty() && tenCheck.isEmpty()) {
                         // Nếu cả cột Loại và Tên đều trống, coi như hết dữ liệu hữu ích
                         System.out.println("Dừng đọc tại dòng " + (row + 1) + " (Cả cột Loại và Tên đều trống).");
@@ -401,6 +412,7 @@ public class ProductForm extends javax.swing.JInternalFrame {
                     if (hangDAO.kiemTraTonTaiTheoTen(tenCheck)) { // Hoặc kiemTraTonTaiTheoTenVaLoai(tenHang, idloai)
                         // Nếu đã tồn tại, ghi log/thông báo và bỏ qua dòng này
                         String skipMsg = "Sản phẩm '" + tenCheck + "' đã tồn tại trong hệ thống.";
+                        JOptionPane.showMessageDialog(this, skipMsg);
                         System.out.println(skipMsg);
                         errorDetails.append(skipMsg).append(" (Đã bỏ qua)\n"); // Thêm vào chi tiết lỗi để người dùng biết
                         rowsFailed++; // Coi như đây là một dòng "thất bại" trong việc thêm mới
@@ -420,9 +432,10 @@ public class ProductForm extends javax.swing.JInternalFrame {
                         // --- Đọc dữ liệu từ Excel ---
                         loai = getCellValueAsString(excelRow.getCell(0)).trim(); // Cột A - Loại
                         tenHang = getCellValueAsString(excelRow.getCell(1)).trim(); // Cột B - Tên sản phẩm
-                        int soLuong = getCellValueAsInt(excelRow.getCell(2)); // Cột C - Số lượng
-                        double gia = getCellValueAsDouble(excelRow.getCell(3)); // Cột D - Đơn giá
-                        String xuatsu = getCellValueAsString(excelRow.getCell(4)).trim(); // Cột E - NCC
+//                        int soLuong = getCellValueAsInt(excelRow.getCell(2)); // Cột C - Số lượng
+                        int soLuong = 0; // số lượng chỉ được nhập ở phiếu nhập hàng
+                        double gia = getCellValueAsDouble(excelRow.getCell(2)); // Cột D - Đơn giá
+                        String xuatsu = getCellValueAsString(excelRow.getCell(3)).trim(); // Cột E - xuatxu
                         int trangThai = 1; // Mặc định trạng thái
 
                         // --- Kiểm tra dữ liệu cơ bản ---
@@ -444,7 +457,31 @@ public class ProductForm extends javax.swing.JInternalFrame {
                         int idloai = phanLoaiDAO.getIdByTenPhanLoai(loai);
 
                         if (idloai <= 0) { // Hoặc điều kiện kiểm tra lỗi phù hợp với DAO của bạn
-                            throw new Exception("Không tìm thấy loại hàng '" + loai + "' trong cơ sở dữ liệu.");
+                            System.out.println("Thông tin: Loại '" + loai + "' chưa có, tiến hành thêm mới vào CSDL.");
+                            try {
+                                // Tạo đối tượng PhanLoai mới
+                                // **Quan trọng**: Giả sử bạn có class PhanLoai và constructor phù hợp
+                                // Hoặc bạn có thể dùng setter nếu có constructor mặc định
+                                // Ví dụ:
+                                PhanLoai newCategory = new PhanLoai(); // Giả sử constructor mặc định
+                                newCategory.setTenPhanLoai(loai);       // Giả sử có phương thức setTenLoai
+                                // newCategory.setMoTa("Được thêm tự động từ import Excel"); // Có thể thêm mô tả nếu cần
+
+                                // **Quan trọng**: Giả sử phương thức insert của PhanLoaiDAO trả về ID mới được tạo
+                                // Nếu không, bạn cần sửa DAO hoặc gọi lại getIdByTenPhanLoai sau khi insert thành công
+                                idloai = phanLoaiDAO.insert(newCategory); // Gọi phương thức insert của DAO
+
+                                if (idloai <= 0) {
+                                    // Lỗi xảy ra khi thêm loại mới vào DB (ví dụ: ràng buộc, lỗi kết nối)
+                                    throw new Exception("Không thể thêm loại hàng mới '" + loai + "' vào cơ sở dữ liệu.");
+                                } else {
+                                    System.out.println("Thông tin: Đã thêm thành công loại '" + loai + "' với ID: " + idloai);
+                                }
+                            } catch (Exception insertEx) {
+                                // Bắt lỗi cụ thể từ việc thêm PhanLoai (ví dụ: SQLException)
+                                // Ném lại lỗi để khối catch bên ngoài xử lý và ghi nhận lỗi cho dòng Excel này
+                                throw new Exception("Lỗi khi cố gắng thêm loại hàng mới '" + loai + "': " + insertEx.getMessage(), insertEx);
+                            }
                         }
 
                         // --- Tạo mã hàng và đối tượng Hang ---
@@ -514,7 +551,6 @@ public class ProductForm extends javax.swing.JInternalFrame {
             Logger.getLogger(ProductForm.class.getName()).log(Level.SEVERE, "Lỗi không mong muốn.", ex);
             JOptionPane.showMessageDialog(this, "Lỗi không mong muốn xảy ra:\n" + ex.getMessage(), "Lỗi Chung", JOptionPane.ERROR_MESSAGE);
         } finally {
-             // Không cần đóng connection ở đây nữa vì không quản lý transaction
         }
 
         // Luôn tải lại bảng để hiển thị kết quả (kể cả khi chỉ thêm được một phần)
@@ -675,7 +711,7 @@ public class ProductForm extends javax.swing.JInternalFrame {
     
     private void jButton7ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton7ActionPerformed
         // TODO add your handling code here:
-        jComboBoxLuaChon.setSelectedIndex(0);
+//        jComboBoxLuaChon.setSelectedIndex(0);
         loadDataToTable();
     }//GEN-LAST:event_jButton7ActionPerformed
 
